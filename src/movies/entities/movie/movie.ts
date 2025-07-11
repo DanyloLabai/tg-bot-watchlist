@@ -10,7 +10,7 @@ export class Movie {
   title!: string;
 
   @Column({ nullable: true })
-  yeaк?: string;
+  year?: string;
 
   @Column({ type: 'float', nullable: true })
   imdbRating?: number;
@@ -18,6 +18,6 @@ export class Movie {
   @Column({ nullable: true })
   poster?: string;
 
-  @OneToMany(() => UserMovie, (UserMovie) => UserMovie.movie)
+  @OneToMany(() => UserMovie, (userMovie) => userMovie.movie)
   userMovies!: UserMovie[];
 }
