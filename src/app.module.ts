@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
-
+import { MoviesModule } from './movies/movies.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -17,6 +17,7 @@ import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
       synchronize: true,
     }),
     TelegramBotModule,
+    MoviesModule,
   ],
 })
 export class AppModule {}
