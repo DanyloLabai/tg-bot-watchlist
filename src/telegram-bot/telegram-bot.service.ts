@@ -35,7 +35,8 @@ export class TelegramBotService implements OnModuleInit {
 
       const buttons = Markup.inlineKeyboard([
         Markup.button.callback('Add to watchlist', `add_${movie.title}`),
-        Markup.button.callback('Next', 'next'),
+        Markup.button.callback('Search movie', 'next'),
+        Markup.button.callback('View watchlist', 'show_watchlist'),
       ]);
       if (movie.poster) {
         return ctx.replyWithPhoto(movie.poster, {
@@ -113,7 +114,7 @@ export class TelegramBotService implements OnModuleInit {
           Markup.button.callback('View watchlist', 'show_watchlist'),
         ]),
       );
-    })
+    });
 
     this.bot.launch();
     console.log('Bot start');
