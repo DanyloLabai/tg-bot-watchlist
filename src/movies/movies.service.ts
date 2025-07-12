@@ -76,8 +76,24 @@ export class MoviesService {
       movie,
     });
 
+    await this.userMovieRepository.save(userMovie);
+
     return { added: true, userMovie };
   }
 
-  
+  async getUserWatchlist(userTelegramId: number): Promise<Movie[]> {
+    const user = await this.userRepository.findOne({
+      where: { telegramId: userTelegramId },
+    });
+
+    if (!user) {
+      return [];
+    }
+    const userMovies = await this.userMovieRepository.find({
+      where: { user: { id: user.id } },
+      relations: ['movie'],
+    });
+
+    return userMovies.map((mov) => mov.movie);
+  }
 }

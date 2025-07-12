@@ -74,6 +74,14 @@ export class TelegramBotService implements OnModuleInit {
         await ctx.answerCbQuery('Movie add to watchlist!');
       }
       await ctx.editMessageReplyMarkup(undefined);
+
+      await ctx.reply(
+        'What is next?',
+        Markup.inlineKeyboard([
+          Markup.button.callback('View watchlist.', 'show_watchlist'),
+          Markup.button.callback('Search movie', 'next'),
+        ]),
+      );
     });
 
     this.bot.action('next', async (ctx) => {
@@ -81,6 +89,31 @@ export class TelegramBotService implements OnModuleInit {
       await ctx.editMessageReplyMarkup(undefined);
       await ctx.reply('Enter movies title.');
     });
+
+    this.bot.action('show_watchlist', async (ctx) => {
+      await ctx.answerCbQuery();
+
+      const userId: number = ctx.from.id;
+      const watchlist = await this.moviesService.getUserWatchlist(userId);
+
+      if (watchlist.length === 0) {
+        return ctx.reply('Your watch list is empty.');
+      }
+
+      const listText = watchlist
+        .map((movie, i) => `${i + 1}. ${movie.title} (${movie.year})`)
+        .join('\n');
+
+      await ctx.reply(`Your watchlist: \n${listText}`);
+
+      await ctx.reply(
+        'What is next?',
+        Markup.inlineKeyboard([
+          Markup.button.callback('Search movie', 'next'),
+          Markup.button.callback('View watchlist', 'show_watchlist'),
+        ]),
+      );
+    })
 
     this.bot.launch();
     console.log('Bot start');
