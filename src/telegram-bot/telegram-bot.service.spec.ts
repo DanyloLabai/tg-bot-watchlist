@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TelegramBotService } from './telegram-bot.service';
 
-
 describe('TelegramBotService', () => {
   let service: TelegramBotService;
 
