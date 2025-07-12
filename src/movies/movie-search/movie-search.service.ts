@@ -26,7 +26,9 @@ export class MovieSearchService {
 
     const url = `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${encodeURIComponent(title)}`;
 
-    const response: AxiosResponse<TMDBResponse> = await firstValueFrom(this.httpService.get<TMDBResponse>(url));
+    const response: AxiosResponse<TMDBResponse> = await firstValueFrom(
+      this.httpService.get<TMDBResponse>(url),
+    );
     const data = response.data;
 
     if (!data.results || data.results.length === 0) return null;

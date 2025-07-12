@@ -5,6 +5,7 @@ import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
 import { MoviesModule } from './movies/movies.module';
 import { Movie } from './movies/entities/movie/movie';
 import { UserMovie } from './movies/entities/user-movie/user-movie';
+import { User } from './movies/entities/user/user.entity';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -15,11 +16,11 @@ import { UserMovie } from './movies/entities/user-movie/user-movie';
       username: process.env.DATABASE_USER,
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
-      entities: [Movie, UserMovie],
+      entities: [Movie, UserMovie, User],
       autoLoadEntities: true,
       synchronize: true,
     }),
-    TypeOrmModule.forFeature([Movie, UserMovie]),
+    TypeOrmModule.forFeature([Movie, UserMovie, User]),
     TelegramBotModule,
     MoviesModule,
   ],

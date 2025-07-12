@@ -6,8 +6,9 @@ import { UserMovie } from './entities/user-movie/user-movie';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MoviesService } from './movies.service';
 import { MoviesController } from './movies.controller';
+import { User } from './entities/user/user.entity';
 @Module({
-  imports: [HttpModule, TypeOrmModule.forFeature([Movie, UserMovie])],
+  imports: [HttpModule, TypeOrmModule.forFeature([Movie, UserMovie, User])],
   providers: [MovieSearchService, MoviesService],
   exports: [MovieSearchService, MoviesService],
   controllers: [MoviesController],
