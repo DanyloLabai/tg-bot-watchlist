@@ -74,7 +74,11 @@ export class TelegramBotService implements OnModuleInit {
       const userId = ctx.from.id;
       const state = this.userState.get(userId);
 
-      if (state !== 'awaiting_search') return;
+      if (state !== 'awaiting_search') {
+        return ctx.reply(
+          'No action selected. Please select one of the menu buttons.',
+        );
+      }
 
       this.userState.set(userId, 'idle');
 
