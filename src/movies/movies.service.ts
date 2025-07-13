@@ -107,22 +107,17 @@ export class MoviesService {
 
   async deleteFromWatchlist(
     userTelegramId: number,
-    titleMovie: string,
+    movieId: number,
   ): Promise<boolean> {
     const user = await this.userRepository.findOne({
       where: { telegramId: userTelegramId },
     });
     if (!user) return false;
 
-    const movie = await this.movieRepository.findOne({
-      where: { title: titleMovie },
-    });
-    if (!movie) return false;
-
     const userMovie = await this.userMovieRepository.findOne({
       where: {
         user: { id: user.id },
-        movie: { id: movie.id },
+        movie: { id: movieId },
       },
       relations: ['user', 'movie'],
     });
