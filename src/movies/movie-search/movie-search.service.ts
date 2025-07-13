@@ -44,15 +44,17 @@ export class MovieSearchService {
 
     const posterBaseUrl = 'https://image.tmdb.org/t/p/w500';
 
-    let movie;
+    let movie: TMDBMovieResult | undefined;
 
     if (year) {
       movie = data.results.find((m) =>
         m.release_date?.startsWith(year.toString()),
       );
-    }
 
-    if (!movie) {
+      if (!movie) {
+        return null;
+      }
+    } else {
       movie = data.results[0];
     }
 
