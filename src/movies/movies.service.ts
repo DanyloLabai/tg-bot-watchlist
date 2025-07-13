@@ -96,4 +96,31 @@ export class MoviesService {
 
     return userMovies.map((mov) => mov.movie);
   }
+
+  async deleteFromWatchlist(
+    userTelegramId: number,
+    titleMovie: string,
+  ): Promise<boolean> {
+    const user = await this.userRepository.findOne({
+      where: { telegramId: userTelegramId },
+    });
+    if (!user) return false;
+
+    const movie = await this.movieRepository.findOne({
+      where: { title: titleMovie },
+    });
+    if (!movie) return false;
+
+    const userMovie = await this.userMovieRepository.findOne({
+      where: {
+        user: { id: user.id },
+        movie: { id: movie.id },
+      },
+      relations: ['user', 'movie'],
+    });
+    if (!userMovie) return false;
+
+    await this.userMovieRepository.remove(userMovie);
+    return true;
+  }
 }

@@ -18,13 +18,22 @@ interface TMDBResponse {
 export class MovieSearchService {
   constructor(private readonly httpService: HttpService) {}
 
-  async searchByTitle(title: string) {
+  async searchByTitle(title: string, year?: number) {
     const apiKey = process.env.TMDB_API_KEY;
     if (!apiKey) {
       throw new Error('TMDB_API_KEY is not set');
     }
 
-    const url = `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&query=${encodeURIComponent(title)}`;
+    const queryParams = new URLSearchParams({
+      api_key: apiKey,
+      query: title,
+    });
+
+    if (year) {
+      queryParams.append('year', year.toString());
+    }
+
+    const url = `https://api.themoviedb.org/3/search/movie?${queryParams.toString()}`;
 
     const response: AxiosResponse<TMDBResponse> = await firstValueFrom(
       this.httpService.get<TMDBResponse>(url),
@@ -33,8 +42,19 @@ export class MovieSearchService {
 
     if (!data.results || data.results.length === 0) return null;
 
-    const movie = data.results[0];
     const posterBaseUrl = 'https://image.tmdb.org/t/p/w500';
+
+    let movie;
+
+    if (year) {
+      movie = data.results.find((m) =>
+        m.release_date?.startsWith(year.toString()),
+      );
+    }
+
+    if (!movie) {
+      movie = data.results[0];
+    }
 
     return {
       title: movie.title,

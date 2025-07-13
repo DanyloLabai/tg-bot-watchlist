@@ -24,11 +24,19 @@ export class TelegramBotService implements OnModuleInit {
     });
 
     this.bot.on('text', async (ctx) => {
-      const title = ctx.message.text;
-      const movie = await this.moviesSearchService.searchByTitle(title);
+      const input = ctx.message.text.trim();
+
+      const match = input.match(/^(.*?)(?:\s+(\d{4}))?$/);
+      const title = match?.[1]?.trim() ?? '';
+      const year = match?.[2] ? parseInt(match[2]) : undefined;
+      const movie = await this.moviesSearchService.searchByTitle(title, year);
 
       if (!movie) {
-        return ctx.reply('Movie not found');
+        return ctx.reply('Movie not found', Markup.inlineKeyboard([
+            [Markup.button.callback(' Search movie', 'next')],
+            [Markup.button.callback(' View watchlist', 'show_watchlist')],
+          ]),
+        );
       }
 
       const caption = ` *${movie.title}* (${movie.year})\n IMDb: ${movie.imdbRating?.toFixed(1) ?? "N/A"}`;
@@ -53,67 +61,121 @@ export class TelegramBotService implements OnModuleInit {
       const userId = ctx.from.id;
 
       let movie = await this.moviesService.findByTitle(movieTitle);
-
       if (!movie) {
         const movieData = await this.moviesSearchService.searchByTitle(movieTitle);
         if (!movieData) {
-          return ctx.answerCbQuery('Movie not found', { show_alert: true });
+          return ctx.answerCbQuery(' Movie not found', { show_alert: true });
         }
 
         const cleanedData = {
           ...movieData,
           poster: movieData.poster ?? undefined,
         };
+
         movie = await this.moviesService.create(cleanedData);
       }
 
       const result = await this.moviesService.addToWatchlist(userId, movie);
 
       if (!result.added) {
-        await ctx.answerCbQuery('This movie is already in your watchlist!');
+        await ctx.answerCbQuery(' Movie already in your watchlist!');
       } else {
-        await ctx.answerCbQuery('Movie add to watchlist!');
+        await ctx.answerCbQuery(' Movie added!');
       }
+
       await ctx.editMessageReplyMarkup(undefined);
 
       await ctx.reply(
-        'What is next?',
+        'What would you like to do next?',
         Markup.inlineKeyboard([
-          Markup.button.callback('View watchlist.', 'show_watchlist'),
-          Markup.button.callback('Search movie', 'next'),
+          [Markup.button.callback(' View watchlist', 'show_watchlist')],
+          [Markup.button.callback(' Search movie', 'next')],
         ]),
       );
-    });
-
-    this.bot.action('next', async (ctx) => {
-      await ctx.answerCbQuery();
-      await ctx.editMessageReplyMarkup(undefined);
-      await ctx.reply('Enter movies title.');
     });
 
     this.bot.action('show_watchlist', async (ctx) => {
       await ctx.answerCbQuery();
 
-      const userId: number = ctx.from.id;
+      const userId = ctx.from.id;
       const watchlist = await this.moviesService.getUserWatchlist(userId);
 
       if (watchlist.length === 0) {
-        return ctx.reply('Your watch list is empty.');
+        return ctx.reply(' Your watchlist is empty', Markup.inlineKeyboard([
+            [Markup.button.callback(' Search movie', 'next')],
+            [Markup.button.callback(' View watchlist', 'show_watchlist')],
+          ]),
+        );
       }
 
-      const listText = watchlist
-        .map((movie, i) => `${i + 1}. ${movie.title} (${movie.year})`)
-        .join('\n');
+      let message = '* Your Watchlist:*\n\n';
+      message += watchlist.map((m, i) => `${i + 1}. ${m.title} (${m.year})`).join('\n');
 
-      await ctx.reply(`Your watchlist: \n${listText}`);
+      await ctx.reply(message, { parse_mode: 'Markdown' });
 
       await ctx.reply(
-        'What is next?',
+        'What next?',
         Markup.inlineKeyboard([
-          Markup.button.callback('Search movie', 'next'),
-          Markup.button.callback('View watchlist', 'show_watchlist'),
+          [Markup.button.callback(' Search movie', 'next')],
+          [Markup.button.callback(' Remove movie', 'show_remove')],
         ]),
       );
+    });
+
+    this.bot.action('show_remove', async (ctx) => {
+      await ctx.answerCbQuery();
+
+      const userId = ctx.from.id;
+      const watchlist = await this.moviesService.getUserWatchlist(userId);
+
+      if (watchlist.length === 0) {
+        return ctx.reply(' Your watchlist is empty.');
+      }
+
+      const removeButtons = watchlist.map((movie) => [
+        Markup.button.callback(` Remove ${movie.title}`, `remove_${movie.title}`),
+      ]);
+
+      removeButtons.push([
+        Markup.button.callback(' Search movie', 'next'),
+        Markup.button.callback(' View watchlist', 'show_watchlist'),
+      ]);
+
+      await ctx.reply(' *Choose a movie to remove:*', {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard(removeButtons),
+      });
+    });
+
+    this.bot.action(/remove_(.+)/, async (ctx) => {
+      const title = ctx.match[1];
+      const userId = ctx.from.id;
+
+      const removed = await this.moviesService.deleteFromWatchlist(userId, title);
+
+      if (removed) {
+        await ctx.answerCbQuery(` Removed "${title}" from your watchlist.`);
+
+        await ctx.reply(
+          'What would you like to do next?',
+          Markup.inlineKeyboard([
+            [Markup.button.callback(' View watchlist', 'show_watchlist')],
+            [Markup.button.callback(' Search movie', 'next')],
+          ]),
+        );
+      } else {
+        await ctx.answerCbQuery(` Movie not found in your watchlist.`);
+      }
+
+      await ctx.editMessageReplyMarkup(undefined);
+    });
+
+
+
+    this.bot.action('next', async (ctx) => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageReplyMarkup(undefined);
+      await ctx.reply('Enter movie title:');
     });
 
     this.bot.launch();
