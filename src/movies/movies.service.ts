@@ -1,10 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Movie } from './entities/movie/movie';
 import { User } from './entities/user/user.entity';
 import { UserMovie } from './entities/user-movie/user-movie';
 import { HttpService } from '@nestjs/axios';
+import { Cache } from 'cache-manager';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 // import { firstValueFrom } from 'rxjs';
 // import { TmdbCreditsResponse } from './interfaces/movie-cast.interface';
 // import { TMDBMovieDetails } from './interfaces/movie-owerview.interfece';
@@ -19,6 +21,8 @@ export class MoviesService {
     @InjectRepository(UserMovie)
     private readonly userMovieRepository: Repository<UserMovie>,
     private readonly httpService: HttpService,
+
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
   private readonly apiKey = process.env.TMDB_API_KEY;
@@ -35,7 +39,17 @@ export class MoviesService {
   }
 
   async findById(id: number): Promise<Movie | null> {
-    return this.movieRepository.findOneBy({ id });
+    const cacheKey = `movie:details:${id}`;
+    const cached = await this.cacheManager.get<Movie>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const movie = await this.movieRepository.findOneBy({ id });
+    if (movie) {
+      await this.cacheManager.set(cacheKey, movie, 600);
+    }
+    return movie;
   }
 
   async findByTitle(title: string, year?: string): Promise<Movie | null> {
@@ -85,11 +99,16 @@ export class MoviesService {
     });
 
     await this.userMovieRepository.save(userMovie);
-
+    await this.cacheManager.del(`user:watchlist:${userId}`);
     return { added: true, userMovie };
   }
 
   async getUserWatchlist(userTelegramId: number): Promise<Movie[]> {
+    const cacheKey = `user:watchlist:${userTelegramId}`;
+    const cached = await this.cacheManager.get<Movie[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
     const user = await this.userRepository.findOne({
       where: { telegramId: userTelegramId },
     });
@@ -102,7 +121,11 @@ export class MoviesService {
       relations: ['movie'],
     });
 
-    return userMovies.map((mov) => mov.movie);
+    const movies = userMovies.map((mov) => mov.movie);
+
+    await this.cacheManager.set(cacheKey, movies, 300);
+
+    return movies;
   }
 
   async deleteFromWatchlist(
@@ -124,6 +147,8 @@ export class MoviesService {
     if (!userMovie) return false;
 
     await this.userMovieRepository.remove(userMovie);
+    await this.cacheManager.del(`user:watchlist:${userTelegramId}`);
+
     return true;
   }
   // Cast and description
