@@ -40,116 +40,141 @@ export class MoviesService {
 
   async findById(id: number): Promise<Movie | null> {
     const cacheKey = `movie:details:${id}`;
-    const cached = await this.cacheManager.get<Movie>(cacheKey);
-    if (cached) {
-      return cached;
-    }
+    try {
+      const cached = await this.cacheManager.get<Movie>(cacheKey);
+      if (cached) {
+        return cached;
+      }
 
-    const movie = await this.movieRepository.findOneBy({ id });
-    if (movie) {
-      await this.cacheManager.set(cacheKey, movie, 600);
+      const movie = await this.movieRepository.findOneBy({ id });
+      if (movie) {
+        await this.cacheManager.set(cacheKey, movie, 600);
+      }
+      return movie;
+    } catch (error) {
+      console.error(`Error in findById:`, error);
+      return null;
     }
-    return movie;
   }
 
   async findByTitle(title: string, year?: string): Promise<Movie | null> {
-    return this.movieRepository.findOneBy({ title, year });
+    try {
+      return this.movieRepository.findOneBy({ title, year });
+    } catch (error) {
+      console.error(`Error in findByTitle:`, error);
+      return null;
+    }
   }
 
   async addToWatchlist(
     userId: number,
     movieData: Partial<Movie>,
   ): Promise<{ added: boolean; userMovie?: UserMovie }> {
-    let user = await this.userRepository.findOneBy({ telegramId: userId });
-    if (!user) {
-      user = this.userRepository.create({ telegramId: userId });
-      await this.userRepository.save(user);
-    }
+    try {
+      let user = await this.userRepository.findOneBy({ telegramId: userId });
+      if (!user) {
+        user = this.userRepository.create({ telegramId: userId });
+        await this.userRepository.save(user);
+      }
 
-    let movie = await this.movieRepository.findOneBy({
-      title: movieData.title,
-      year: movieData.year,
-    });
-    if (!movie) {
-      const safeMovieData: Partial<Movie> = {
-        title: movieData.title ?? '',
-        year: movieData.year ?? '',
-        imdbRating: movieData.imdbRating ?? undefined,
-        poster: movieData.poster ?? undefined,
-      };
-      movie = this.movieRepository.create(safeMovieData);
-      await this.movieRepository.save(movie);
-    }
+      let movie = await this.movieRepository.findOneBy({
+        title: movieData.title,
+        year: movieData.year,
+      });
+      if (!movie) {
+        const safeMovieData: Partial<Movie> = {
+          title: movieData.title ?? '',
+          year: movieData.year ?? '',
+          imdbRating: movieData.imdbRating ?? undefined,
+          poster: movieData.poster ?? undefined,
+        };
+        movie = this.movieRepository.create(safeMovieData);
+        await this.movieRepository.save(movie);
+      }
 
-    const existing = await this.userMovieRepository.findOne({
-      where: {
-        user: { id: user.id },
-        movie: { id: movie.id },
-      },
-      relations: ['user', 'movie'],
-    });
+      const existing = await this.userMovieRepository.findOne({
+        where: {
+          user: { id: user.id },
+          movie: { id: movie.id },
+        },
+        relations: ['user', 'movie'],
+      });
 
-    if (existing) {
+      if (existing) {
+        return { added: false };
+      }
+
+      const userMovie = this.userMovieRepository.create({
+        user,
+        movie,
+      });
+
+      await this.userMovieRepository.save(userMovie);
+      await this.cacheManager.del(`user:watchlist:${userId}`);
+      return { added: true, userMovie };
+    } catch (error) {
+      console.error('Error in addToWatchlist:', error);
       return { added: false };
     }
-
-    const userMovie = this.userMovieRepository.create({
-      user,
-      movie,
-    });
-
-    await this.userMovieRepository.save(userMovie);
-    await this.cacheManager.del(`user:watchlist:${userId}`);
-    return { added: true, userMovie };
   }
 
   async getUserWatchlist(userTelegramId: number): Promise<Movie[]> {
     const cacheKey = `user:watchlist:${userTelegramId}`;
-    const cached = await this.cacheManager.get<Movie[]>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-    const user = await this.userRepository.findOne({
-      where: { telegramId: userTelegramId },
-    });
+    try {
+      const cached = await this.cacheManager.get<Movie[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+      const user = await this.userRepository.findOne({
+        where: { telegramId: userTelegramId },
+      });
 
-    if (!user) {
+      if (!user) {
+        return [];
+      }
+      const userMovies = await this.userMovieRepository.find({
+        where: { user: { id: user.id } },
+        relations: ['movie'],
+      });
+
+      const movies = userMovies.map((mov) => mov.movie);
+
+      await this.cacheManager.set(cacheKey, movies, 300);
+
+      return movies;
+    } catch (error) {
+      console.error('Error in getUserWatchlist:', error);
       return [];
     }
-    const userMovies = await this.userMovieRepository.find({
-      where: { user: { id: user.id } },
-      relations: ['movie'],
-    });
-
-    const movies = userMovies.map((mov) => mov.movie);
-
-    await this.cacheManager.set(cacheKey, movies, 300);
-
-    return movies;
   }
 
   async deleteFromWatchlist(
     userTelegramId: number,
     movieId: number,
   ): Promise<boolean> {
-    const user = await this.userRepository.findOne({
-      where: { telegramId: userTelegramId },
-    });
-    if (!user) return false;
+    try {
+      const user = await this.userRepository.findOne({
+        where: { telegramId: userTelegramId },
+      });
+      if (!user) return false;
 
-    const userMovie = await this.userMovieRepository.findOne({
-      where: {
-        user: { id: user.id },
-        movie: { id: movieId },
-      },
-      relations: ['user', 'movie'],
-    });
-    if (!userMovie) return false;
+      const userMovie = await this.userMovieRepository.findOne({
+        where: {
+          user: { id: user.id },
+          movie: { id: movieId },
+        },
+        relations: ['user', 'movie'],
+      });
+      if (!userMovie) return false;
 
-    await this.userMovieRepository.remove(userMovie);
-    await this.cacheManager.del(`user:watchlist:${userTelegramId}`);
+      await this.userMovieRepository.remove(userMovie);
+      await this.cacheManager.del(`user:watchlist:${userTelegramId}`);
 
-    return true;
+      return true;
+    } catch (error) {
+      console.error('Error in getUserWatchlist:', error);
+      return false;
+    }
   }
   // Cast and description
   //   async getMovieCast(movieId: number): Promise<string[]> {

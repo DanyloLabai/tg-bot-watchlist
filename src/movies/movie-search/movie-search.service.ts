@@ -4,17 +4,13 @@ import { firstValueFrom } from 'rxjs';
 import { AxiosResponse } from 'axios';
 import { Cache } from 'cache-manager';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-
-interface TMDBMovieResult {
-  title: string;
-  release_date: string;
-  vote_average: number;
-  poster_path: string | null;
-}
-
-interface TMDBResponse {
-  results: TMDBMovieResult[];
-}
+import {
+  TMDBResponse,
+  SearchResult,
+  TMDBSearchResult,
+  TMDBMovieResult,
+  TMDBTvResult,
+} from '../interfaces/tmdbReslResp.interface';
 
 @Injectable()
 export class MovieSearchService {
@@ -23,60 +19,89 @@ export class MovieSearchService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
-  async searchByTitle(title: string, year?: number) {
-    const apiKey = process.env.TMDB_API_KEY;
-    if (!apiKey) {
-      throw new Error('TMDB_API_KEY is not set');
-    }
+  private isMovie(result: TMDBSearchResult): result is TMDBMovieResult {
+    return (result as TMDBMovieResult).release_date !== undefined;
+  }
 
-    const cacheKey = `tmdb:search:${title.toLowerCase()}:${year ?? 'any'}`;
-    const cached = await this.cacheManager.get<typeof result>(cacheKey);
-    if (cached) {
-      return cached;
-    }
+  private isTv(result: TMDBSearchResult): result is TMDBTvResult {
+    return (result as TMDBTvResult).first_air_date !== undefined;
+  }
 
-    const queryParams = new URLSearchParams({
-      api_key: apiKey,
-      query: title,
-    });
+  async searchByTitle(title: string, year?: number): Promise<SearchResult[]> {
+    try {
+      const apiKey = process.env.TMDB_API_KEY;
+      if (!apiKey) throw new Error('TMDB_API_KEY is not set');
 
-    if (year) {
-      queryParams.append('year', year.toString());
-    }
+      const posterBaseUrl = 'https://image.tmdb.org/t/p/w500';
+      const searchTypes = ['movie', 'tv'];
+      const cacheKey = `tmdb:search:${title.toLowerCase()}:${year ?? 'any'}`;
 
-    const url = `https://api.themoviedb.org/3/search/movie?${queryParams.toString()}`;
+      const cached = await this.cacheManager.get<SearchResult[]>(cacheKey);
+      if (cached) return cached;
 
-    const response: AxiosResponse<TMDBResponse> = await firstValueFrom(
-      this.httpService.get<TMDBResponse>(url),
-    );
-    const data = response.data;
+      let combinedResults: SearchResult[] = [];
 
-    if (!data.results || data.results.length === 0) return null;
+      for (const type of searchTypes) {
+        const queryParams = new URLSearchParams({
+          api_key: apiKey,
+          query: title,
+        });
+        if (year) {
+          queryParams.append('year', year.toString());
+        }
 
-    const posterBaseUrl = 'https://image.tmdb.org/t/p/w500';
+        const url = `https://api.themoviedb.org/3/search/${type}?${queryParams.toString()}`;
 
-    let movie: TMDBMovieResult | undefined;
+        const response: AxiosResponse<TMDBResponse> = await firstValueFrom(
+          this.httpService.get<TMDBResponse>(url),
+        );
 
-    if (year) {
-      movie = data.results.find((m) =>
-        m.release_date?.startsWith(year.toString()),
-      );
+        const data = response.data;
+        if (!data.results || data.results.length === 0) continue;
 
-      if (!movie) {
-        return null;
+        const filteredSorted = data.results
+          .filter(
+            (m) =>
+              m.vote_average > 0 &&
+              (!year ||
+                (this.isMovie(m)
+                  ? m.release_date?.startsWith(year.toString())
+                  : m.first_air_date?.startsWith(year.toString()))),
+          )
+          .sort((a, b) => b.vote_average - a.vote_average)
+          .slice(0, 5);
+
+        const mappedResults = filteredSorted.map((m) => {
+          if (this.isMovie(m)) {
+            return {
+              title: m.title,
+              year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
+              imdbRating: m.vote_average,
+              poster: m.poster_path ? posterBaseUrl + m.poster_path : null,
+            };
+          } else {
+            return {
+              title: m.name,
+              year: m.first_air_date ? m.first_air_date.split('-')[0] : 'N/A',
+              imdbRating: m.vote_average,
+              poster: m.poster_path ? posterBaseUrl + m.poster_path : null,
+            };
+          }
+        });
+
+        combinedResults = combinedResults.concat(mappedResults);
       }
-    } else {
-      movie = data.results[0];
+
+      combinedResults = combinedResults
+        .sort((a, b) => b.imdbRating - a.imdbRating)
+        .slice(0, 8);
+
+      await this.cacheManager.set(cacheKey, combinedResults, 3600);
+
+      return combinedResults;
+    } catch (error) {
+      console.error('Error in searchByTitle:', error);
+      return [];
     }
-
-    const result = {
-      title: movie.title,
-      year: movie.release_date ? movie.release_date.split('-')[0] : 'N/A',
-      imdbRating: movie.vote_average,
-      poster: movie.poster_path ? posterBaseUrl + movie.poster_path : null,
-    };
-
-    await this.cacheManager.set(cacheKey, result, 3600);
-    return result;
   }
 }
