@@ -26,7 +26,7 @@ export class TelegramBotService implements OnModuleInit {
   }
 
   onModuleInit() {
-    const token = this.configService.get<string>('BOT_TOKEN');
+    const token = process.env.BOT_TOKEN;
     if (!token) throw new Error('BOT_TOKEN not defined in env');
 
     this.bot = new Telegraf(token);
@@ -186,6 +186,9 @@ export class TelegramBotService implements OnModuleInit {
         if (!movies || !movies[index]) {
           return ctx.reply('Movie not found.');
         }
+
+        await ctx.editMessageReplyMarkup(undefined);
+
 
         const movieData = movies[index];
 
