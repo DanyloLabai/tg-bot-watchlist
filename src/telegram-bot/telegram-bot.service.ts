@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Markup, Telegraf } from 'telegraf';
+import { Context, Markup, Telegraf } from 'telegraf';
 import { MovieSearchService } from 'src/movies/movie-search/movie-search.service';
 import { MoviesService } from 'src/movies/movies.service';
 import { SearchResult } from 'src/movies/interfaces/tmdbReslResp.interface';
@@ -10,6 +10,7 @@ export class TelegramBotService implements OnModuleInit {
   private bot?: Telegraf;
   private readonly userState = new Map<number, 'idle' | 'awaiting_search'>();
   private tempResults = new Map<number, SearchResult[]>();
+  private lastSearchMessages = new Map<number, number>();
 
   constructor(
     private configService: ConfigService,
@@ -23,6 +24,43 @@ export class TelegramBotService implements OnModuleInit {
           .resize()
           .persistent()
       : Markup.removeKeyboard();
+  }
+
+  private async handleSearchCommand(ctx: Context) {
+    if (!ctx.from) {
+      return ctx.reply('Cannot identify user.');
+    }
+    const userId = ctx.from.id;
+
+    this.userState.set(userId, 'awaiting_search');
+    this.tempResults.delete(userId);
+
+    const messageId = this.lastSearchMessages.get(userId);
+    if (!ctx.chat) {
+      return ctx.reply('Chat information missing.');
+}
+    if (messageId) {
+      try {
+        await ctx.telegram.editMessageReplyMarkup(
+          ctx.chat.id,
+          messageId,
+          undefined,
+          undefined,
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('message is not modified')
+        ) {
+          console.error('Error message:', error.message);
+        } else {
+          console.error('Unknown error:', error);
+        }
+      }
+      this.lastSearchMessages.delete(userId);
+    }
+
+    await ctx.reply('Enter movie title:');
   }
 
   onModuleInit() {
@@ -43,10 +81,9 @@ export class TelegramBotService implements OnModuleInit {
 
     this.bot.hears('Search movie', async (ctx) => {
       try {
-        this.userState.set(ctx.from.id, 'awaiting_search');
-        await ctx.reply('Enter movie title:');
+      await this.handleSearchCommand(ctx);
       } catch (error) {
-        console.error('Error', error);
+        console.error('Error in handleSearchCommand', error);
         await ctx.reply('Oops, something went wrong. Please try again later.');
       }
     });
@@ -142,10 +179,11 @@ export class TelegramBotService implements OnModuleInit {
           Markup.button.callback(`${i + 1}`, `choose_${i}`),
         );
 
-        await ctx.reply(message, {
+        const sent = await ctx.reply(message, {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard(buttons),
         });
+        this.lastSearchMessages.set(userId, sent.message_id);
       } catch (error) {
         console.error('Error in text handle', error);
         await ctx.reply('Oops, something went wrong. Please try again later.');
@@ -189,10 +227,7 @@ export class TelegramBotService implements OnModuleInit {
 
         await ctx.editMessageReplyMarkup(undefined);
 
-
         const movieData = movies[index];
-
-        this.tempResults.delete(userId);
 
         let movie = await this.moviesService.findByTitle(movieData.title, movieData.year);
         if (!movie) {
@@ -204,7 +239,10 @@ export class TelegramBotService implements OnModuleInit {
 
         const caption = `*${movie.title}* (${movie.year})\nIMDb: ${movie.imdbRating?.toFixed(1) ?? 'N/A'}`;
         const buttons = Markup.inlineKeyboard([
-          Markup.button.callback('Add to watchlist', `add_${movie.id}`),
+          [
+            Markup.button.callback('Add to watchlist', `add_${movie.id}`),
+            Markup.button.callback('Back', `back_to_results`),
+          ],
         ]);
 
         if (movie.poster) {
@@ -268,6 +306,38 @@ export class TelegramBotService implements OnModuleInit {
       } catch (error) {
         console.error('Error', error);
         await ctx.reply('Oops, something went wrong. Please try again later.');
+      }
+    });
+
+    this.bot.action('back_to_results', async (ctx) => {
+      try {
+        const userId = ctx.from.id;
+        const movies = this.tempResults.get(userId);
+
+        if (!movies || movies.length === 0) {
+          return ctx.reply('No previous results found.');
+        }
+
+        let message = '*Found results:*\n\n';
+        message += movies
+          .map(
+            (m, i) =>
+              `${i + 1}.  *${m.title}* (${m.year}) – ${m.imdbRating.toFixed(1)}`,
+          )
+          .join('\n');
+
+        const buttons = movies.map((_, i) =>
+          Markup.button.callback(`${i + 1}`, `choose_${i}`),
+        );
+
+        await ctx.editMessageReplyMarkup(undefined);
+        await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard(buttons),
+        });
+      } catch (err) {
+        console.error('Error on back', err);
+        await ctx.reply(' Something went wrong.');
       }
     });
 
